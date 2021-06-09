@@ -1,12 +1,12 @@
 /*
 
-	OpenFrameworks NDI receiver 
+	OpenFrameworks NDI receiver
 
 	using the NewTek NDI SDK to receive frames via network
 
 	http://NDI.NewTek.com
-	
-	Copyright (C) 2016-2018 Lynn Jarvis.
+
+	Copyright (C) 2016-2020 Lynn Jarvis.
 
 	http://www.spout.zeal.co
 
@@ -16,17 +16,17 @@
 
 	=========================================================================
 	This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+	it under the terms of the GNU Lesser General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU Lesser General Public License for more details.
 
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+	You should have received a copy of the GNU Lesser General Public License
+	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	=========================================================================
 
 	13.10.16 - Addon receiver example created
@@ -51,32 +51,35 @@
 	12.07.18 - ReceiveImage ofFbo/ofTexture/ofImage
 			 - All size change checks in ofxDNIreceiver class
 	06.08.18 - Include all receiving options in example
+	27.03.19 - Add example of using ReceiverCreated, ReceiverConnected and GetSenderFps
+	10.11.19 - Revise for ofxNDI for NDI SDK Version 4.0
+	28.02.20 - Remove initial texture clear.
+			   Add received fps to on-screen display
 
 */
 #include "ofApp.h"
 
 //--------------------------------------------------------------
 void ofApp::setup() {
+
 	ofBackground(0);
 	ofSetColor(255);
 
 	// Set the window title to show that it is a receiver
 	ofSetWindowTitle("Openframeworks NDI receiver");
 
-	#ifdef _WIN64
+#ifdef _WIN64
 	cout << "\nofxNDI example receiver - 64 bit" << endl;
-	#else // _WIN64
+#else // _WIN64
 	cout << "\nofxNDI example receiver - 32 bit" << endl;
-	#endif // _WIN64
+#endif // _WIN64
 
-	cout << NDIlib_version() << " (http:\\NDI.NewTek.com)" << endl;
+	cout << ndiReceiver.GetNDIversion() << " (http://ndi.tv/)" << endl;
 	cout << "Press 'SPACE' to list NDI senders" << endl;
-	
-	// Optionally receive ofFbo, ofTexture, ofImage, ofPixels or unsigned char
-	// All must be RGBA
 
 	// ofFbo
 	ndiFbo.allocate(ofGetWidth(), ofGetHeight(), GL_RGBA);
+
 	// Clear the fbo so the first frame draw is black
 	ndiFbo.begin();
 	ofClear(0, 0, 0, 0);
@@ -84,8 +87,6 @@ void ofApp::setup() {
 
 	// ofTexture
 	ndiTexture.allocate(ofGetWidth(), ofGetHeight(), GL_RGBA);
-	// Clear the texture so the first frame draw is black
-	glClearTexImage(ndiTexture.getTextureData().textureID, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
 	// ofImage
 	ndiImage.allocate(ofGetWidth(), ofGetHeight(), OF_IMAGE_COLOR_ALPHA);
@@ -94,11 +95,14 @@ void ofApp::setup() {
 	ndiPixels.allocate(ofGetWidth(), ofGetHeight(), OF_IMAGE_COLOR_ALPHA);
 
 	// unsigned char pixels
+	ndiChars = new unsigned char[senderWidth*senderHeight * 4];
+
+	// Sender dimensions and fps are not known yet
 	senderWidth = (unsigned char)ofGetWidth();
 	senderHeight = (unsigned char)ofGetHeight();
-	ndiChars = new unsigned char[senderWidth*senderHeight*4];
 
-} // end setup
+}
+
 
 //--------------------------------------------------------------
 void ofApp::update() {
@@ -107,15 +111,16 @@ void ofApp::update() {
 
 //--------------------------------------------------------------
 void ofApp::draw() {
-	
-	// Receive ofFbo
-	ndiReceiver.ReceiveImage(ndiFbo);
-	ndiFbo.draw(0, 0, 100, 100);
-	spout.sendTexture(ndiFbo.getTexture(), "NDItoSPOUT2");
 
 	// Receive ofTexture
-	// ndiReceiver.ReceiveImage(ndiTexture);
-	// ndiTexture.draw(0, 0, ofGetWidth(), ofGetHeight());
+	ndiReceiver.ReceiveImage(ndiTexture);
+	ndiTexture.draw(0, 0, ofGetWidth(), ofGetHeight());
+	//ofTexture tex = ndiFbo.getTexture();
+	spout.sendTexture(ndiTexture, "NDItoSPOUT2");
+	
+	// Receive ofFbo
+	// ndiReceiver.ReceiveImage(ndiFbo);
+	// ndiFbo.draw(0, 0, ofGetWidth(), ofGetHeight());
 
 	// Receive ofImage
 	// ndiReceiver.ReceiveImage(ndiImage);
@@ -127,9 +132,9 @@ void ofApp::draw() {
 	// ndiImage.draw(0, 0, ofGetWidth(), ofGetHeight());
 
 	/*
-	// ===============================================================
 	// Receive unsigned char pixel image
-	// Manage buffer resize if there is a sender size change
+	// ndiChars is the buffer to receive the pixels
+	// buffer size must be managed if there is a sender size change
 	unsigned int width = (unsigned int)ofGetWidth();
 	unsigned int height = (unsigned int)ofGetHeight();
 	if (ndiReceiver.ReceiveImage(ndiChars, width, height)) {
@@ -151,33 +156,30 @@ void ofApp::draw() {
 	}
 	// Draw whether received or not
 	ndiImage.draw(0, 0, ofGetWidth(), ofGetHeight());
-	// ===============================================================
 	*/
 
 	// Show what it is receiving
-	ShowFps();
+	ShowInfo();
 
 }
 
-
-void ofApp::ShowFps() {
+void ofApp::ShowInfo() {
 
 	char str[256];
-	unsigned int width = 0;
-	unsigned int height = 0;
 
 	int nsenders = ndiReceiver.GetSenderCount();
 	if (nsenders > 0) {
 
-		width = ndiReceiver.GetSenderWidth();
-		height = ndiReceiver.GetSenderHeight();
-
-		if (width > 0 && height > 0)
-			// Show what is received with the received fps
-			sprintf_s(str, 256, "[%s] (%dx%d) - fps %2.0f", ndiReceiver.GetSenderName().c_str(), width, height, ndiReceiver.GetFps());
-		else
-			// connected but nothing received yet so the frame size is unknown
-			sprintf_s(str, 256, "Connected to [%s]", ndiReceiver.GetSenderName().c_str());
+		if (ndiReceiver.ReceiverCreated()) {
+			if (ndiReceiver.ReceiverConnected()) {
+				// Show received sender information and received fps
+				sprintf_s(str, 256, "[%s] (%dx%d/%4.2fp) (fps %2.0f)", ndiReceiver.GetSenderName().c_str(), ndiReceiver.GetSenderWidth(), ndiReceiver.GetSenderHeight(), ndiReceiver.GetSenderFps(), ndiReceiver.GetFps());
+			}
+			else {
+				// Nothing received
+				sprintf_s(str, 256, "Connecting to [%s]", ndiReceiver.GetSenderName().c_str());
+			}
+		}
 		ofDrawBitmapString(str, 20, 30);
 
 		if (nsenders == 1) {
@@ -199,36 +201,48 @@ void ofApp::ShowFps() {
 void ofApp::keyPressed(int key) {
 
 	char name[256];
-	int index = key-48;
+	int index = key - 48;
 
 	int nsenders = ndiReceiver.GetSenderCount();
 
-	if(key == ' ') {
+	if (key == ' ') {
 		// List all the senders
-		if(nsenders > 0) {
+		if (nsenders > 0) {
 			cout << "Number of NDI senders found: " << nsenders << endl;
 			for (int i = 0; i < nsenders; i++) {
 				ndiReceiver.GetSenderName(name, 256, i);
 				cout << "    Sender " << i << " [" << name << "]" << endl;
 			}
-			if(nsenders > 1)
-				cout << "Press key [0] to [" << nsenders-1 << "] to select a sender" << endl;
+			if (nsenders > 1)
+				cout << "Press key [0] to [" << nsenders - 1 << "] to select a sender" << endl;
 		}
-		else 
+		else
 			cout << "No NDI senders found" << endl;
 	}
-	else if(nsenders > 0 && index >= 0 && index < nsenders) {
+	else if (nsenders > 0 && index >= 0 && index < nsenders) {
 		// Update the receiver with the returned index
 		// Returns false if the current sender is selected
-		if(ndiReceiver.SetSenderIndex(index))
+		if (ndiReceiver.SetSenderIndex(index))
 			cout << "Selected [" << ndiReceiver.GetSenderName(index) << "]" << endl;
 		else
 			cout << "Same sender" << endl;
 	}
+
+
 }
 
 //--------------------------------------------------------------
-void ofApp::keyReleased(int key){
+void ofApp::keyReleased(int key) {
+
+}
+
+//--------------------------------------------------------------
+void ofApp::mouseMoved(int x, int y) {
+
+}
+
+//--------------------------------------------------------------
+void ofApp::mouseDragged(int x, int y, int button) {
 
 }
 
@@ -237,42 +251,33 @@ void ofApp::mousePressed(int x, int y, int button) {
 
 }
 
+
 //--------------------------------------------------------------
-void ofApp::mouseMoved(int x, int y ){
+void ofApp::mouseReleased(int x, int y, int button) {
 
 }
 
 //--------------------------------------------------------------
-void ofApp::mouseDragged(int x, int y, int button){
+void ofApp::mouseEntered(int x, int y) {
 
 }
 
 //--------------------------------------------------------------
-void ofApp::mouseReleased(int x, int y, int button){
+void ofApp::mouseExited(int x, int y) {
 
 }
 
 //--------------------------------------------------------------
-void ofApp::mouseEntered(int x, int y){
+void ofApp::windowResized(int w, int h) {
 
 }
 
 //--------------------------------------------------------------
-void ofApp::mouseExited(int x, int y){
+void ofApp::gotMessage(ofMessage msg) {
 
 }
 
 //--------------------------------------------------------------
-void ofApp::windowResized(int w, int h){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::gotMessage(ofMessage msg){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::dragEvent(ofDragInfo dragInfo){ 
+void ofApp::dragEvent(ofDragInfo dragInfo) {
 
 }

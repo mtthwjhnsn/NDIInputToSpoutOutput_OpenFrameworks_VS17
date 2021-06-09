@@ -61,7 +61,7 @@ class ofApp : public ofBaseApp {
 		unsigned int senderWidth; // sender width and height needed to receive char pixels
 		unsigned int senderHeight;
 
-		void ShowFps();
+		void ShowInfo();
 
 		ofxSpout2::Sender spout;
 
